@@ -70,7 +70,7 @@ app.post("/api/s3/presign", authGateway.requireFile(), async (c) => {
           }
 
           // 删除旧文件的数据库记录
-          await fileRepository.deleteById(existingFile.id);
+          await fileRepository.deleteFile(existingFile.id);
 
           // 删除关联的密码记录（如果有）
           await fileRepository.deleteFilePasswordRecord(existingFile.id);
@@ -284,7 +284,7 @@ app.put("/api/upload-direct/:filename", authGateway.requireFile(), async (c) => 
     // 获取系统最大上传限制
     const repositoryFactory = new RepositoryFactory(db);
     const systemRepository = repositoryFactory.getSystemRepository();
-    const maxUploadSizeResult = await systemRepository.getSetting("max_upload_size");
+    const maxUploadSizeResult = await systemRepository.getSettingMetadata("max_upload_size");
 
     const maxUploadSizeMB = maxUploadSizeResult ? parseInt(maxUploadSizeResult.value) : DEFAULT_MAX_UPLOAD_SIZE_MB;
     const maxUploadSizeBytes = maxUploadSizeMB * 1024 * 1024;
@@ -391,7 +391,7 @@ app.put("/api/upload-direct/:filename", authGateway.requireFile(), async (c) => 
           }
 
           // 删除旧文件的数据库记录
-          await fileRepository.deleteById(existingFile.id);
+          await fileRepository.deleteFile(existingFile.id);
 
           // 删除关联的密码记录（如果有）
           await fileRepository.deleteFilePasswordRecord(existingFile.id);
