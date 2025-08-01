@@ -12,6 +12,7 @@ import { RepositoryFactory } from "../repositories/index.js";
 import { generateFileId, generateUniqueFileSlug, generateShortId, getFileNameAndExt, getSafeFileName, formatFileSize } from "../utils/common.js";
 import { getMimeTypeFromFilename } from "../utils/fileUtils.js";
 import { hashPassword } from "../utils/crypto.js";
+import { GetFileType, getFileTypeName } from "../utils/fileTypeDetector.js";
 
 // 默认最大上传限制（MB）
 const DEFAULT_MAX_UPLOAD_SIZE_MB = 100;
@@ -139,9 +140,15 @@ export class FileShareService {
     // 6. 后续清理工作
     await this._postCommitCleanup(fileRecord, config);
 
+    // 7. 添加文件类型信息
+    const fileType = await GetFileType(updatedFile.filename, this.db);
+    const fileTypeName = await getFileTypeName(updatedFile.filename, this.db);
+
     return {
       ...updatedFile,
       url: `/file/${updatedFile.slug}`,
+      type: fileType, // 整数类型常量 (0-6)
+      typeName: fileTypeName, // 类型名称（用于调试）
     };
   }
 
@@ -248,6 +255,16 @@ export class FileShareService {
     // 处理最大查看次数
     const maxViews = typeof max_views === "number" && max_views > 0 ? max_views : null;
 
+    // 获取全局默认代理设置
+    let defaultUseProxy = false; // 硬编码默认值作为后备
+    try {
+      const systemRepository = this.repositoryFactory.getSystemRepository();
+      const defaultProxySetting = await systemRepository.getSettingMetadata("default_use_proxy");
+      defaultUseProxy = defaultProxySetting?.value === "true";
+    } catch (error) {
+      console.warn("获取全局默认代理设置失败，使用硬编码默认值:", error);
+    }
+
     // 创建文件记录
     const fileRepository = this.repositoryFactory.getFileRepository();
     const fileData = {
@@ -265,7 +282,7 @@ export class FileShareService {
       password: passwordHash,
       expires_at: expiresAt,
       max_views: maxViews > 0 ? maxViews : null,
-      use_proxy: use_proxy !== undefined ? use_proxy : true,
+      use_proxy: use_proxy !== undefined ? use_proxy : defaultUseProxy,
       created_by: userType === "admin" ? userIdOrInfo : `apikey:${userIdOrInfo}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -517,6 +534,10 @@ export class FileShareService {
         filename = "download";
       }
 
+      // 添加文件类型检测
+      const fileType = await GetFileType(filename, this.db);
+      const fileTypeName = await getFileTypeName(filename, this.db);
+
       // 构建元数据对象
       metadata = {
         url: url,
@@ -526,6 +547,8 @@ export class FileShareService {
         lastModified: lastModified,
         method: method,
         corsSupported: corsSupported,
+        type: fileType, // 整数类型常量 (0-6)
+        typeName: fileTypeName, // 类型名称（用于调试）
       };
 
       return metadata;
@@ -733,6 +756,10 @@ export class FileShareService {
       // 6. 提交后清理工作
       await this._postCommitCleanup(fileRecord, config);
 
+      // 7. 添加文件类型信息
+      const fileType = await GetFileType(fileRecord.filename, this.db);
+      const fileTypeName = await getFileTypeName(fileRecord.filename, this.db);
+
       return {
         success: true,
         fileId: fileId,
@@ -742,6 +769,8 @@ export class FileShareService {
         etag: completeResult.etag,
         url: `/file/${fileRecord.slug}`,
         s3Url: completeResult.s3Url,
+        type: fileType, // 整数类型常量 (0-6)
+        typeName: fileTypeName, // 类型名称（用于调试）
       };
     } catch (error) {
       console.error("URL分片上传完成失败:", error);
