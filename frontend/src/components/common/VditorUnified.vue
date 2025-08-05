@@ -19,6 +19,9 @@
 import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
 import { useI18n } from "vue-i18n";
 
+// 国际化函数
+const { t } = useI18n();
+
 // 懒加载Vditor和CSS
 let VditorClass = null;
 let vditorCSSLoaded = false;
@@ -27,7 +30,7 @@ const loadVditor = async () => {
   if (!VditorClass) {
     await loadVditorCSS();
 
-    // 从assets目录加载Vditor
+    // 从本地vditor目录加载Vditor
     const script = document.createElement("script");
     script.src = "/assets/vditor/dist/index.min.js";
 
@@ -53,7 +56,7 @@ const loadVditorCSS = async () => {
   }
 };
 
-// 优化的表情配置 - 只包含最常用的表情
+// 优化的表情配置
 const getOptimizedEmojis = () => ({
   // 基本表情 (20个)
   smile: "😊",
@@ -91,8 +94,6 @@ const getOptimizedEmojis = () => ({
   bulb: "💡",
 });
 
-const { t } = useI18n();
-
 // Props
 const props = defineProps({
   darkMode: {
@@ -110,7 +111,7 @@ const props = defineProps({
 });
 
 // Emits
-const emit = defineEmits(["update:modelValue", "editor-ready", "content-change"]);
+const emit = defineEmits(["update:modelValue", "editor-ready", "content-change", "import-file", "clear-content", "show-copy-formats"]);
 
 // 编辑器实例
 let editor = null;
@@ -120,6 +121,9 @@ const plainTextContent = ref("");
 // 原始纯文本内容（保留格式）
 const originalPlainTextContent = ref("");
 
+// 内容变化缓存
+let lastKnownValue = "";
+
 // 初始化编辑器
 const initEditor = async () => {
   const vditorContainer = document.getElementById("vditor");
@@ -128,13 +132,14 @@ const initEditor = async () => {
     return;
   }
 
-  // 开始初始化编辑器
-
   try {
     // 懒加载Vditor
     const VditorConstructor = await loadVditor();
 
-    const theme = props.darkMode ? "dark" : "light";
+    // 编辑器主题：只有 "classic" 和 "dark"
+    const editorTheme = props.darkMode ? "dark" : "classic";
+    // 内容主题：用于预览区域
+    const contentTheme = props.darkMode ? "dark" : "light";
 
     // 检测是否为移动设备
     const isMobile = window.innerWidth <= 768;
@@ -146,7 +151,7 @@ const initEditor = async () => {
       minHeight: 400,
       width: "100%",
       mode: defaultMode,
-      theme: theme,
+      theme: editorTheme,
       cdn: "/assets/vditor",
       resize: {
         enable: true,
@@ -165,7 +170,10 @@ const initEditor = async () => {
         delay: 800, // 优化预览延迟
         maxWidth: 800,
         mode: "both",
-        theme: theme,
+        theme: {
+          current: contentTheme,
+          path: "/assets/vditor/dist/css/content-theme",
+        },
         hljs: {
           lineNumber: true,
           style: props.darkMode ? "vs2015" : "github",
@@ -184,7 +192,7 @@ const initEditor = async () => {
           fixTermTypo: true,
           media: true,
           mermaid: {
-            theme: "default",
+            theme: props.darkMode ? "dark" : "default",
             useMaxWidth: false,
           },
         },
@@ -311,7 +319,7 @@ const initEditor = async () => {
         }
       },
       customKeymap: {
-        Tab: (editor, event) => {
+        Tab: () => {
           return false;
         },
       },
@@ -400,6 +408,19 @@ const clearContent = () => {
   emit("content-change", "");
 };
 
+// 监听内容变化
+watch(
+  () => props.modelValue,
+  (newValue) => {
+    // 避免不必要的getValue()调用
+    if (newValue !== lastKnownValue) {
+      setValue(newValue);
+      lastKnownValue = newValue;
+    }
+  },
+  { immediate: true }
+);
+
 // 监听暗色模式变化
 watch(
   () => props.darkMode,
@@ -480,21 +501,7 @@ watch(
   }
 );
 
-// 监听内容变化 - 优化性能
-let lastKnownValue = "";
-watch(
-  () => props.modelValue,
-  (newValue) => {
-    // 避免不必要的getValue()调用
-    if (newValue !== lastKnownValue) {
-      setValue(newValue);
-      lastKnownValue = newValue;
-    }
-  },
-  { immediate: true }
-);
-
-// 组件挂载 - 优化性能
+// 组件挂载
 onMounted(async () => {
   if (!props.isPlainTextMode) {
     await nextTick();

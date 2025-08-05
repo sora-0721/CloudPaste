@@ -97,9 +97,9 @@ export class AdminRepository extends BaseRepository {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const recentActive = await this.queryFirst(
-      `SELECT COUNT(*) as count FROM ${DbTables.ADMINS}
+        `SELECT COUNT(*) as count FROM ${DbTables.ADMINS}
        WHERE updated_at IS NOT NULL AND updated_at >= ?`,
-      [thirtyDaysAgo.toISOString()]
+        [thirtyDaysAgo.toISOString()]
     );
 
     return {
@@ -139,10 +139,10 @@ export class AdminRepository extends BaseRepository {
     if (!token) return null;
 
     return await this.queryFirst(
-      `SELECT admin_id, expires_at, created_at
+        `SELECT admin_id, expires_at, created_at
        FROM ${DbTables.ADMIN_TOKENS}
        WHERE token = ?`,
-      [token]
+        [token]
     );
   }
 
@@ -189,9 +189,9 @@ export class AdminRepository extends BaseRepository {
     const expiresAtISO = expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt;
 
     return await this.execute(
-      `INSERT INTO ${DbTables.ADMIN_TOKENS} (token, admin_id, expires_at, created_at)
+        `INSERT INTO ${DbTables.ADMIN_TOKENS} (token, admin_id, expires_at, created_at)
        VALUES (?, ?, ?, CURRENT_TIMESTAMP)`,
-      [token, adminId, expiresAtISO]
+        [token, adminId, expiresAtISO]
     );
   }
 
@@ -235,9 +235,9 @@ export class AdminRepository extends BaseRepository {
    */
   async cleanupTokensForAdmin(adminId, currentTime = new Date()) {
     const result = await this.execute(
-      `DELETE FROM ${DbTables.ADMIN_TOKENS}
+        `DELETE FROM ${DbTables.ADMIN_TOKENS}
        WHERE admin_id = ? AND expires_at < ?`,
-      [adminId, currentTime.toISOString()]
+        [adminId, currentTime.toISOString()]
     );
 
     return {
@@ -247,24 +247,62 @@ export class AdminRepository extends BaseRepository {
   }
 
   /**
-   * 获取管理员的令牌统计信息
+   * 获取管理员的令牌列表（可选择是否包含过期token）
+   * @param {string} adminId - 管理员ID
+   * @param {Object} options - 查询选项
+   * @param {boolean} options.includeExpired - 是否包含过期token，默认false
+   * @param {string} options.orderBy - 排序方式，默认'created_at ASC'
+   * @returns {Promise<Array>} 令牌列表
+   */
+  async getTokensForAdmin(adminId, options = {}) {
+    const { includeExpired = false, orderBy = "created_at ASC" } = options;
+
+    let sql = `SELECT token, created_at, expires_at FROM ${DbTables.ADMIN_TOKENS} WHERE admin_id = ?`;
+    const params = [adminId];
+
+    // 如果不包含过期token，添加过期时间条件
+    if (!includeExpired) {
+      const now = new Date().toISOString();
+      sql += ` AND expires_at > ?`;
+      params.push(now);
+    }
+
+    sql += ` ORDER BY ${orderBy}`;
+
+    const result = await this.query(sql, params);
+    return result.results || [];
+  }
+
+  /**
+   * 获取管理员的所有有效令牌（向后兼容方法）
+   * @param {string} adminId - 管理员ID
+   * @returns {Promise<Array>} 有效令牌列表
+   */
+  async getValidTokensForAdmin(adminId) {
+    return await this.getTokensForAdmin(adminId, { includeExpired: false, orderBy: "created_at ASC" });
+  }
+
+  /**
+   * 获取管理员的所有令牌（包括过期的）
+   * @param {string} adminId - 管理员ID
+   * @returns {Promise<Array>} 所有令牌列表
+   */
+  async getAllTokensForAdmin(adminId) {
+    return await this.getTokensForAdmin(adminId, { includeExpired: true, orderBy: "created_at DESC" });
+  }
+
+  /**
+   * 获取管理员的令牌统计信息（基于getValidTokensForAdmin避免重复查询）
    * @param {string} adminId - 管理员ID
    * @returns {Promise<Object>} 令牌统计信息
    */
   async getTokenStatistics(adminId) {
-    const now = new Date().toISOString();
-
     // 获取总令牌数
     const total = await super.count(DbTables.ADMIN_TOKENS, { admin_id: adminId });
 
-    // 获取有效令牌数（需要复杂条件，保持自定义查询）
-    const validResult = await this.queryFirst(
-      `SELECT COUNT(*) as count FROM ${DbTables.ADMIN_TOKENS}
-       WHERE admin_id = ? AND expires_at > ?`,
-      [adminId, now]
-    );
-
-    const valid = validResult?.count || 0;
+    // 获取有效令牌数（复用getValidTokensForAdmin方法）
+    const validTokens = await this.getValidTokensForAdmin(adminId);
+    const valid = validTokens.length;
 
     return {
       total,
