@@ -406,8 +406,14 @@ export async function initDatabase(db) {
   // 创建索引
   await createIndexes(db);
 
-  // 初始化默认数据
-  await initDefaultSettings(db);
+  // 初始化完整的默认设置
+  await initDefaultSettings(db); // 基础设置 (4个)
+  await addPreviewSettings(db); // 预览设置 (6个)
+  await addSiteSettings(db); // 站点设置 (5个)
+  await addCustomContentSettings(db); // 自定义内容设置 (2个)
+  await addFileNamingStrategySetting(db); // 文件命名策略设置 (1个)
+  await addDefaultProxySetting(db); // 默认代理设置 (1个)
+
   await createDefaultAdmin(db);
 
   console.log("数据库初始化完成");
@@ -892,6 +898,24 @@ async function addPreviewSettings(db) {
       sort_order: 4,
       flags: 0,
     },
+    {
+      key: "preview_office_types",
+      value: "doc,docx,xls,xlsx,ppt,pptx,rtf",
+      description: "支持预览的Office文档扩展名（需要在线转换），用逗号分隔",
+      type: "textarea",
+      group_id: 2,
+      sort_order: 5,
+      flags: 0,
+    },
+    {
+      key: "preview_document_types",
+      value: "pdf",
+      description: "支持预览的文档文件扩展名（可直接预览），用逗号分隔",
+      type: "textarea",
+      group_id: 2,
+      sort_order: 6,
+      flags: 0,
+    },
   ];
 
   for (const setting of previewSettings) {
@@ -937,9 +961,28 @@ async function addFileNamingStrategySetting(db) {
         `INSERT INTO ${DbTables.SYSTEM_SETTINGS} (key, value, description, type, group_id, options, sort_order, flags, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
       )
-      .bind("file_naming_strategy", "overwrite", "文件命名策略：覆盖模式使用原始文件名（可能冲突），随机后缀模式避免冲突且保持文件名可读性。", 1, options, 4, 0)
+      .bind("file_naming_strategy", "overwrite", "文件命名策略：覆盖模式使用原始文件名（可能冲突），随机后缀模式避免冲突且保持文件名可读性。", "select", 1, options, 4, 0)
       .run();
     console.log("成功添加文件命名策略设置");
+  }
+}
+
+/**
+ * 添加默认代理设置
+ * @param {D1Database} db - D1数据库实例
+ */
+async function addDefaultProxySetting(db) {
+  console.log("开始添加默认代理设置...");
+
+  const existing = await db.prepare(`SELECT key FROM ${DbTables.SYSTEM_SETTINGS} WHERE key = ?`).bind("default_use_proxy").first();
+  if (!existing) {
+    await db
+      .prepare(
+        `INSERT INTO ${DbTables.SYSTEM_SETTINGS} (key, value, description, type, group_id, sort_order, flags, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+      )
+      .bind("default_use_proxy", "false", "文件管理的默认代理设置。启用后新上传文件默认使用Worker代理，禁用后默认使用直链。", "bool", 1, 5, 0)
+      .run();
   }
 }
 
