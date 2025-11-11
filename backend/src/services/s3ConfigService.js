@@ -543,7 +543,7 @@ export async function testS3Connection(db, id, adminId, encryptionSecret, reques
   await executeFrontendSimulationTest(testResult, strategy);
 
   // 更新最后使用时间
-  await updateLastUsedTime(db, id, this.repositoryFactory);
+  await updateLastUsedTime(db, id, factory);
 
   // 生成测试结果摘要
   const summary = generateTestSummary(testResult);
